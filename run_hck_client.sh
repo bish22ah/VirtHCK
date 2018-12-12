@@ -337,6 +337,38 @@ if [ "$IS_PHYSICAL" = "false" ]; then    # in case of a virtual device
        BOOT_STORAGE_PAIR="${IDE_STORAGE_PAIR}"
        TEST_VIOCRYPT_DEVICE="-object cryptodev-backend-builtin,id=cryptodev0 -device ${TEST_DEV_NAME},id=crypto0,cryptodev=cryptodev0"
        ;;
+    system)
+       IFS=','; SYS_TEST_DEV_NAME=($TEST_DEV_NAME); unset IFS;
+
+       prepare_test_image 1
+       BOOT_STORAGE_PAIR="${IDE_STORAGE_PAIR}"
+
+       TEST_NET_MAC_ADDRESS=`client_test_mac 1`
+       TEST_DEVICE_ID=""
+       case ${TEST_NETWORK_INTERFACE} in
+       tap)
+          TAP_DEVICE="-netdev tap,id=hostnet2,vhost=${VHOST_STATE},script=${HCK_ROOT}/hck_test_bridge_ifup_${UNIQUE_ID}.sh,downscript=no,ifname=`client_test_ifname 1`,queues=$(netdev_queues_num)"
+          TEST_DEVICE_ID=",id=`client_test_ifname 1`"
+          ;;
+       macvtap)
+          UNIQ_DESCR=$(( ${CLIENT_NUM} + ${UNIQUE_ID} ))
+          TAP_ID=`enslave_test_iface_macvtap ${TEST_BR_NAME} ${UNIQ_DESCR} ${TEST_NET_MAC_ADDRESS}`
+          eval "exec ${UNIQ_DESCR}<>${TAP_ID}"
+          # Attention:  ifname=, script=, downscript=, vnet_hdr=, helper=, queues=, fds=, and vhostfds= are invalid with fd=
+          TAP_DEVICE="-netdev tap,id=hostnet2,vhost=${VHOST_STATE},fd=${UNIQ_DESCR}"
+          ;;
+       * )
+          echo NETWORK INTERFACE IS NOT IMPLEMENTED
+          exit 1
+          ;;
+       esac
+       TEST_NET_DEVICES="${TAP_DEVICE}
+                         -device ${SYS_TEST_DEV_NAME[0]}`extra_params_cmd``virtionet_speed`,netdev=hostnet2,mac=${TEST_NET_MAC_ADDRESS},bus=${BUS_NAME}.0$(client_mq_device_param)${TEST_DEVICE_ID}"
+
+       TEST_STORAGE_PAIR="-drive file=`test_image_name 1`$(set_qcow2_l2_cache `test_image_name 1`),if=none,format=qcow2,id=virtio_scsi${DRIVE_CACHE_OPTION}
+                          -device ${SYS_TEST_DEV_NAME[1]}`extra_params_cmd`,id=scsi,bus=${BUS_NAME}.0,addr=0x5
+                          -device scsi-hd,drive=virtio_scsi,serial=${CLIENT_NUM}0${UNIQUE_ID}"
+       ;;
 
       * )
        echo "NOT IMPLEMENTED"
